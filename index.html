@@ -122,7 +122,7 @@
   .add-btn{background:var(--accent);color:#fff;border:none;width:38px;flex-shrink:0;border-radius:8px;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;}
   .add-btn:hover{background:var(--accent-dim);}
 
-  .alpha-row{padding:0 20px 14px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;}
+  .alpha-row{padding:8px 20px 14px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;align-items:center;}
   .alpha-row::-webkit-scrollbar{display:none;}
   .alpha-pill{
     flex-shrink:0;background:transparent;border:1px solid var(--border);color:var(--text-muted);
@@ -133,13 +133,16 @@
   .alpha-pill.active{background:var(--accent);color:#fff;border-color:var(--accent);}
   .alpha-pill:disabled{opacity:0.3;}
 
-  .type-row{padding:12px 20px 0;display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;}
+  .type-row{padding:14px 20px 0;display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;align-items:center;}
+  .type-row:empty{display:none;}
   .type-row::-webkit-scrollbar{display:none;}
   .type-pill{
     flex-shrink:0;background:transparent;border:1px solid var(--border);color:var(--text-muted);
-    padding:6px 13px;border-radius:14px;font-size:12px;font-weight:600;
+    height:26px;padding:0 12px;border-radius:13px;font-size:12px;font-weight:600;
     display:flex;align-items:center;gap:5px;font-family:'Inter',sans-serif;
+    white-space:nowrap;
   }
+  .type-pill svg{width:12px;height:12px;flex-shrink:0;}
   .type-pill.active{background:var(--accent-soft);color:var(--accent-dim);border-color:var(--accent);}
   .type-badge{
     display:inline-flex;align-items:center;justify-content:center;
@@ -609,6 +612,7 @@ const typeMeta = {
 function renderTypeRow(){
   const typeRow = document.getElementById('typeRow');
   const typesPresent = new Set(entries.map(e => e.type || 'other'));
+  if(typesPresent.size < 2){ typeRow.innerHTML = ''; return; }
   const order = ['card','bank','passport','idcard','other'];
   typeRow.innerHTML = `<button type="button" class="type-pill ${activeType==='ALL'?'active':''}" data-type="ALL">All types</button>` +
     order.filter(t => typesPresent.has(t)).map(t =>
@@ -948,21 +952,41 @@ document.getElementById('cardScanInput').addEventListener('change', async (e)=>{
     scanBtnText.textContent = 'Reading card…';
     const { data } = await Tesseract.recognize(file, 'eng');
     const text = data.text || '';
-    const numMatch = text.match(/(?:\d[ -]?){13,19}/);
-    const expMatch = text.match(/(0[1-9]|1[0-2])\s*\/\s*(\d{2}|\d{4})/);
     const filled = [];
-    if(numMatch){
-      const digits = numMatch[0].replace(/[^\d]/g, '');
-      document.getElementById('fCardNumber').value = digits.replace(/(.{4})/g, '$1 ').trim();
+
+    // Prefer the standard grouped format (XXXX XXXX XXXX XXXX/XXX) —
+    // far less likely to false-positive than a loose digit run.
+    let cardDigits = '';
+    const grouped = text.match(/\b\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{3,4}\b/);
+    if(grouped){
+      cardDigits = grouped[0].replace(/[^\d]/g, '');
+    } else {
+      // Fallback: scan all digit runs, take the longest valid-length one.
+      const runs = text.match(/\d[\d\s-]{11,}\d/g) || [];
+      let best = '';
+      runs.forEach(run => {
+        const d = run.replace(/[^\d]/g, '');
+        if(d.length >= 13 && d.length <= 19 && d.length > best.length) best = d;
+      });
+      cardDigits = best;
+    }
+    if(cardDigits){
+      document.getElementById('fCardNumber').value = cardDigits.replace(/(.{4})/g, '$1 ').trim();
       filled.push('card number');
     }
-    if(expMatch){
-      let yy = expMatch[2];
+
+    // Cards often print a "valid from" date before the expiry — take the
+    // last MM/YY match on the card as the better guess for expiry.
+    const expMatches = [...text.matchAll(/(0[1-9]|1[0-2])\s*\/\s*(\d{2}|\d{4})/g)];
+    if(expMatches.length){
+      const last = expMatches[expMatches.length - 1];
+      let yy = last[2];
       if(yy.length === 4) yy = yy.slice(2);
-      document.getElementById('fCardExpiry').value = expMatch[1] + '/' + yy;
+      document.getElementById('fCardExpiry').value = last[1] + '/' + yy;
       filled.push('expiry');
     }
-    showToast(filled.length ? `Scanned ${filled.join(' & ')} — please verify` : 'Could not read the card clearly — enter manually');
+
+    showToast(filled.length ? `Scanned ${filled.join(' & ')} — please verify` : 'Could not read the card clearly — enter manually, or retake in brighter light');
   } catch(err){
     showToast('Scan failed: ' + err.message);
   } finally {
