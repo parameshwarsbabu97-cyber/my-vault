@@ -216,6 +216,10 @@
   .mini-btn{flex:1;background:var(--glass);border:none;color:var(--text-muted);padding:9px;border-radius:9px;font-size:12px;font-weight:600;box-shadow:var(--sh-glow-sm);}
   .mini-btn:active{box-shadow:var(--sh-pressed);}
   .mini-btn.danger:active{color:var(--danger);}
+  a.mini-btn{display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;text-align:center;margin-top:8px;}
+  .go-to-page-btn{background:linear-gradient(155deg, var(--accent), var(--accent-dim));color:#fff;box-shadow:var(--sh-glow-sm), inset 0 1px 0 rgba(255,255,255,0.25);}
+  .go-to-page-btn svg{width:13px;height:13px;flex-shrink:0;}
+  .url-link{color:var(--accent) !important; text-decoration:underline; text-underline-offset:2px; cursor:pointer;}
   .empty{text-align:center;color:var(--text-muted);padding:60px 20px;font-size:14px;line-height:1.6;}
 
   .overlay{display:none;position:fixed;inset:0;background:rgba(5,4,14,0.55);align-items:flex-end;justify-content:center;z-index:20;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
@@ -425,6 +429,7 @@
     </div>
 
     <div class="field-group"><label>Document type</label><input type="text" id="fSite" placeholder="e.g. Aadhar Card, PAN Card, Bank Login" /></div>
+    <div class="field-group"><label>Website URL (optional)</label><input type="url" id="fUrl" placeholder="https://example.com/login" autocomplete="off" /></div>
 
     <!-- Card-specific fields -->
     <div class="type-fields" id="fieldsCard">
@@ -474,6 +479,11 @@
         </select>
       </div>
       <div class="field-group"><label>ID number</label><input type="text" id="fIdNumber" placeholder="ID number" /></div>
+    </div>
+
+    <!-- Other/general-specific fields -->
+    <div class="type-fields" id="fieldsOther">
+      <div class="field-group"><label>URL (optional)</label><input type="url" id="fUrl" placeholder="e.g. https://example.com/login" inputmode="url" /></div>
     </div>
 
     <div class="field-group"><label id="userLabel">Username</label><input type="text" id="fUser" placeholder="e.g. yourname" autocomplete="off" /></div>
@@ -838,9 +848,17 @@ function renderCardVisual(e){
     </div>`;
 }
 
+function normalizeUrl(url){
+  if(!url) return '';
+  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+}
+
+function iconExternal(){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`; }
+
 function renderExtraFields(e){
   const ex = e.extra || {};
   const rows = [];
+  let urlHtml = '';
   if(e.type === 'card'){
     // Card number, expiry, holder, and CVV are shown on the flip card itself above.
   } else if(e.type === 'bank'){
@@ -853,14 +871,24 @@ function renderExtraFields(e){
   } else if(e.type === 'idcard'){
     if(ex.idSubtype) rows.push(['Type', ex.idSubtype]);
     if(ex.idNumber) rows.push(['Number', ex.idNumber]);
+  } else if(e.type === 'other' && ex.url){
+    const hrefUrl = escapeHtml(normalizeUrl(ex.url));
+    const displayUrl = escapeHtml(ex.url);
+    urlHtml = `
+          <div class="field-row">
+            <div class="field-label">URL</div>
+            <a class="field-val url-link" href="${hrefUrl}" target="_blank" rel="noopener noreferrer">${displayUrl}</a>
+            <button class="icon-btn" data-copy="${encodeURIComponent(ex.url)}" title="Copy URL">${iconCopy()}</button>
+          </div>
+          <a class="mini-btn go-to-page-btn" href="${hrefUrl}" target="_blank" rel="noopener noreferrer">${iconExternal()} Go to page</a>`;
   }
-  if(!rows.length) return '';
-  return rows.map(([label, val]) => `
+  const rowsHtml = rows.map(([label, val]) => `
           <div class="field-row">
             <div class="field-label">${escapeHtml(label)}</div>
             <div class="field-val">${escapeHtml(val)}</div>
             <button class="icon-btn" data-copy="${encodeURIComponent(val)}" title="Copy">${iconCopy()}</button>
           </div>`).join('');
+  return urlHtml + rowsHtml;
 }
 
 function renderAlphaRow(){
@@ -1005,7 +1033,7 @@ const sitePlaceholders = {
   idcard: 'e.g. Aadhar Card, PAN Card, Voter ID',
   other: 'e.g. Login Page, Mail ID, Streaming Service'
 };
-const typeSectionMap = { card: 'fieldsCard', bank: 'fieldsBank', passport: 'fieldsPassport', idcard: 'fieldsId' };
+const typeSectionMap = { card: 'fieldsCard', bank: 'fieldsBank', passport: 'fieldsPassport', idcard: 'fieldsId', other: 'fieldsOther' };
 const fType = document.getElementById('fType');
 const userLabel = document.getElementById('userLabel');
 const passLabel = document.getElementById('passLabel');
@@ -1035,6 +1063,7 @@ function resetTypeFields(){
   document.getElementById('fPassportExpiry').value = '';
   document.getElementById('fIdSubtype').value = 'Aadhar';
   document.getElementById('fIdNumber').value = '';
+  document.getElementById('fUrl').value = '';
   updateTypeFields();
 }
 
@@ -1053,6 +1082,7 @@ function populateTypeFields(e){
   document.getElementById('fPassportExpiry').value = ex.passportExpiry || '';
   document.getElementById('fIdSubtype').value = ex.idSubtype || 'Aadhar';
   document.getElementById('fIdNumber').value = ex.idNumber || '';
+  document.getElementById('fUrl').value = ex.url || '';
   updateTypeFields();
 }
 
@@ -1084,6 +1114,11 @@ function collectExtra(){
     return {
       idSubtype: document.getElementById('fIdSubtype').value,
       idNumber: document.getElementById('fIdNumber').value.trim()
+    };
+  }
+  if(type === 'other'){
+    return {
+      url: document.getElementById('fUrl').value.trim()
     };
   }
   return {};
@@ -1270,6 +1305,8 @@ function buildShareRows(e){
   } else if(e.type === 'idcard'){
     rows.push(['ID type', ex.idSubtype || '—']);
     rows.push(['ID number', ex.idNumber || '—']);
+  } else if(e.type === 'other' && ex.url){
+    rows.push(['URL', ex.url]);
   }
   (e.qa || []).forEach(pair => {
     if(pair.q || pair.a) rows.push([pair.q || 'Hint', pair.a || '—']);
@@ -1347,10 +1384,13 @@ function buildShareVisualHtml(e){
   // "other" — clean labeled credential card (handles long values like URLs/tokens gracefully)
   return `
   <div style="border-radius:14px;overflow:hidden;background:#fff;color:#1a1a1a;margin-bottom:20px;border:1px solid #e5e5e5;box-sizing:border-box;">
-    <div style="background:#f3f3f3;padding:8px 12px;display:flex;gap:6px;align-items:center;">
-      <div style="width:8px;height:8px;border-radius:50%;background:#ff5f57;flex-shrink:0;"></div>
-      <div style="width:8px;height:8px;border-radius:50%;background:#febc2e;flex-shrink:0;"></div>
-      <div style="width:8px;height:8px;border-radius:50%;background:#28c840;flex-shrink:0;"></div>
+    <div style="background:#f3f3f3;padding:8px 12px;display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#ff5f57;"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#febc2e;"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#28c840;"></div>
+      </div>
+      ${ex.url ? `<div style="flex:1;min-width:0;background:#fff;border-radius:5px;padding:3px 8px;font-size:10px;color:#666;${wrap} overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(ex.url)}</div>` : ''}
     </div>
     <div style="padding:20px;">
       <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;margin-bottom:16px;text-align:center;color:#111;${wrap}">${escapeHtml(e.site||'Login')}</div>
